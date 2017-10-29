@@ -1,14 +1,9 @@
 package com.immymemine.kevin.musicplayer.activities;
 
-import android.content.ComponentName;
-import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
-import android.os.IBinder;
 import android.support.design.widget.TabLayout;
 import android.support.v4.app.Fragment;
 import android.support.v4.view.ViewPager;
-import android.util.Log;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.TextView;
@@ -17,6 +12,11 @@ import com.bumptech.glide.Glide;
 import com.immymemine.kevin.musicplayer.R;
 import com.immymemine.kevin.musicplayer.adapter.ViewPagerAdapter;
 import com.immymemine.kevin.musicplayer.custom_view.CircleImageView;
+import com.immymemine.kevin.musicplayer.events.ActivityToServiceEvent;
+import com.immymemine.kevin.musicplayer.events.BusProvider;
+import com.immymemine.kevin.musicplayer.events.Event;
+import com.immymemine.kevin.musicplayer.events.IsPlayingEvent;
+import com.immymemine.kevin.musicplayer.events.PlayerInfoEvent;
 import com.immymemine.kevin.musicplayer.fragments.AlbumFragment;
 import com.immymemine.kevin.musicplayer.fragments.ArtistFragment;
 import com.immymemine.kevin.musicplayer.fragments.GenreFragment;
@@ -24,11 +24,17 @@ import com.immymemine.kevin.musicplayer.fragments.InteractionListener;
 import com.immymemine.kevin.musicplayer.fragments.PlayerFragment;
 import com.immymemine.kevin.musicplayer.model.MusicItem;
 import com.immymemine.kevin.musicplayer.service.PlayerService;
+import com.immymemine.kevin.musicplayer.utils.Const;
 import com.immymemine.kevin.musicplayer.utils.FileUtil;
 import com.immymemine.kevin.musicplayer.utils.PermissionUtil;
 
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
+
 import java.util.ArrayList;
 import java.util.List;
+
+import static com.immymemine.kevin.musicplayer.utils.FileUtil.ITEMS;
 
 public class MainActivity extends PermissionUtil implements InteractionListener{
     // view
@@ -39,75 +45,83 @@ public class MainActivity extends PermissionUtil implements InteractionListener{
     ImageButton ibPre, ibStart, ibNext;
 
     // mp info
-    private boolean isBound;
+    private boolean isPlaying;
     private int mCurrentPosition;
-    private static List<MusicItem> data = new ArrayList<>();
 
-    //service
-    PlayerService playerService;
+    // service
     Intent intent;
+
+    // event bus
+    EventBus bus;
+    ActivityToServiceEvent postEventToService;
+
+    // data...
+    List<MusicItem> musicData = new ArrayList<>();
     @Override
     public void init() {
-        // view
+        // ---------- onCreate 에서 실행 ----------
+        // view load
         initView();
         initViewPager();
         initTabLayout();
 
         // data load from external storage
-        data = FileUtil.readMusicList(this);
+        FileUtil.readMusicList(this);
 
-        // service bind
+        // service start >>> onCreate >>> onStartCommand
         intent = new Intent(this, PlayerService.class);
-        this.bindService(intent, con, Context.BIND_AUTO_CREATE);
+        startService(intent);
 
-        mCurrentPosition = 0;
-    }
+        // event bus 등록
+        bus = BusProvider.getInstance();
+        bus.register(this);
+        postEventToService = new ActivityToServiceEvent();
 
-    private final ServiceConnection con = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            PlayerService.CustomBinder binder = (PlayerService.CustomBinder) service;
-            playerService = binder.getService();
-            isBound = true;
-        }
+        // mp info 초기화
+        isPlaying = false;
 
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            isBound = false;
-        }
-    };
-
-    public void unBind() {
-        unbindService(con);
+        // data
+        musicData = ITEMS;
     }
 
     // initiate view objects
     private void initView() {
+        View.OnClickListener mListener = new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(MainActivity.this, DetailActivity.class);
+                startActivity(intent);
+            }
+        };
+
         titleView = (TextView) findViewById(R.id.titleView);
+        titleView.setOnClickListener(mListener);
         artistView = (TextView) findViewById(R.id.artistView);
+        artistView.setOnClickListener(mListener);
 
         viewPager = (ViewPager) findViewById(R.id.viewPager);
         tabLayout = (TabLayout) findViewById(R.id.tabLayout);
 
         // circle image view
         civ_album = (CircleImageView) findViewById(R.id.civ_album);
-
-        civ_album.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Intent intent = new Intent(getBaseContext(), DetailActivity.class);
-                startActivity(intent);
-            }
-        });
+        civ_album.setOnClickListener(mListener);
 
         // button
         ibStart = (ImageButton) findViewById(R.id.ib_start);
         ibNext = (ImageButton) findViewById(R.id.ib_next);
+
         ibNext.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
-                ff();
-                return false;
+                while(v.isPressed()) {
+                    ff();
+                    try {
+                        Thread.sleep(5000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+                return true;
             }
         });
 
@@ -115,8 +129,15 @@ public class MainActivity extends PermissionUtil implements InteractionListener{
         ibPre.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
-                fb();
-                return false;
+                while(v.isPressed()) {
+                    fb();
+                    try {
+                        Thread.sleep(5000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+                return true;
             }
         });
     }
@@ -142,110 +163,131 @@ public class MainActivity extends PermissionUtil implements InteractionListener{
         viewPager.addOnPageChangeListener(new TabLayout.TabLayoutOnPageChangeListener(tabLayout));
     }
 
+    @Override
+    protected void onDestroy() {
+        // 서비스 종료
+        stopService(intent);
+
+        // event bus 해제
+        bus.unregister(this);
+
+        super.onDestroy();
+    }
+
 
     public void play(View view) {
-        Log.d("isBound", isBound + "");
-        if(isBound) {
-            if(isPlaying)
-                pause(view);
-            else {
-                playerService.play();
-                isPlaying = playerService.getIsPlaying();
-            }
-
-            setUI();
-        }
-    }
-
-    public void pause(View view) {
-        if(isBound) {
-            playerService.pause();
-            isPlaying = playerService.getIsPlaying();
-
-            setUI();
-        }
-    }
-
-    int timePosition;
-    public void ff() {
-        timePosition = playerService.getPosition();
-        playerService.seekTo(timePosition+5000);
-        mCurrentPosition = playerService.getmCurrentPosition();
-    }
-
-    public void fb() {
-        timePosition = playerService.getPosition();
-        if(timePosition < 5000) {
-            if(isBound) {
-                playerService.pre();
-                mCurrentPosition = playerService.getmCurrentPosition();
-                isPlaying = playerService.getIsPlaying();
-
-                setUI();
-            }
+        if(!isPlaying) {
+            postEventToService.setCommand(Const.PLAY);
+            bus.post(postEventToService);
+            isPlaying = true;
+            ibStart.setImageResource(android.R.drawable.ic_media_pause);
         } else {
-            playerService.seekTo(playerService.getPosition()-5000);
+            pause();
         }
     }
-    public void next(View view) {
-        if(isBound) {
-            playerService.next();
-            mCurrentPosition = playerService.getmCurrentPosition();
-            isPlaying = playerService.getIsPlaying();
 
-            setUI();
+    public void pause() {
+        postEventToService.setCommand(Const.PAUSE);
+        bus.post(postEventToService);
+        isPlaying = false;
+        ibStart.setImageResource(android.R.drawable.ic_media_play);
+    }
+
+    public void next(View view) {
+        postEventToService.setCommand(Const.NEXT);
+        bus.post(postEventToService);
+
+        isPlaying = true;
+        if(mCurrentPosition == musicData.size()-1) {
+            mCurrentPosition = 0;
+        } else {
+            mCurrentPosition++;
         }
+        ibStart.setImageResource(android.R.drawable.ic_media_pause);
+        titleView.setText( musicData.get(mCurrentPosition).getTitle() );
+        artistView.setText( musicData.get(mCurrentPosition).getArtist() );
+        Glide.with(this).load( musicData.get(mCurrentPosition).getAlbumUri() ).into(civ_album);
     }
 
     public void pre(View view) {
-        if(isBound) {
-            playerService.pre();
-            mCurrentPosition = playerService.getmCurrentPosition();
-            isPlaying = playerService.getIsPlaying();
+        postEventToService.setCommand(Const.PRE);
+        bus.post(postEventToService);
 
-            setUI();
+        isPlaying = true;
+        if(mCurrentPosition == 0) {
+            mCurrentPosition = musicData.size()-1;
+        } else {
+            mCurrentPosition--;
         }
+        ibStart.setImageResource(android.R.drawable.ic_media_pause);
+        titleView.setText( musicData.get(mCurrentPosition).getTitle() );
+        artistView.setText( musicData.get(mCurrentPosition).getArtist() );
+        Glide.with(this).load( musicData.get(mCurrentPosition).getAlbumUri() ).into(civ_album);
+    }
+
+    public void ff() {
+        postEventToService.setCommand(Const.FF);
+        bus.post(postEventToService);
+
+    }
+
+    public void fb() {
+        postEventToService.setCommand(Const.FB);
+        bus.post(postEventToService);
+
     }
 
     @Override
     public void playByList(int position) { // 포지션 값에 의한 play
-        if(isBound) {
-            playerService.play(position);
-            isPlaying = playerService.getIsPlaying();
-            mCurrentPosition = playerService.getmCurrentPosition();
+        // post event
+        postEventToService.setCommand(Const.PLAYWITHPOSITION);
+        postEventToService.setmCurrentPosition(position);
+        bus.post(postEventToService);
 
-            setUI();
+        // view
+        isPlaying = true;
+        mCurrentPosition = position;
+        ibStart.setImageResource(android.R.drawable.ic_media_pause);
+        titleView.setText( musicData.get(mCurrentPosition).getTitle() );
+        artistView.setText( musicData.get(mCurrentPosition).getArtist() );
+        Glide.with(this).load( musicData.get(mCurrentPosition).getAlbumUri() ).into(civ_album);
+    }
+
+    @Subscribe
+    public void subscriber(Event event) {
+        if(event instanceof PlayerInfoEvent) {
+            // player info setting
+            mCurrentPosition = ((PlayerInfoEvent) event).getPlayerInfo().getmCurrentPosition();
+
+            titleView.setText( musicData.get(mCurrentPosition).getTitle() );
+            artistView.setText( musicData.get(mCurrentPosition).getArtist() );
+            Glide.with(this).load( musicData.get(mCurrentPosition).getAlbumUri() ).into(civ_album);
+        }
+
+        if(event instanceof IsPlayingEvent) {
+            if( ((IsPlayingEvent) event).isPlaying() )
+                ibStart.setImageResource(android.R.drawable.ic_media_pause);
+            else
+                ibStart.setImageResource(android.R.drawable.ic_media_play);
         }
     }
 
-    private boolean isPlaying;
-    @Override
-    protected void onResume() {
-        if(isBound) {
-            isPlaying = playerService.getIsPlaying();
-            mCurrentPosition = playerService.getmCurrentPosition();
+    public void post(int flag) {
+        if(flag > 0) {
+            postEventToService.setCommand(Const.PLAYWITHPOSITION);
+            postEventToService.setmCurrentPosition(flag);
+            bus.post(postEventToService);
+        } else {
+            switch (flag) {
+                case Const.P:
+                    break;
+                case Const.PA:
+                    break;
+                case Const.N:
+                    break;
+                case Const.PR:
+                    break;
+            }
         }
-
-        setUI();
-        super.onResume();
-    }
-
-    @Override
-    protected void onDestroy() {
-        unBind();
-        super.onDestroy();
-    }
-
-    public void setUI() {
-        if(!titleView.getText().toString().equals(data.get(mCurrentPosition).getTitle())) {
-            Glide.with(this).load(data.get(mCurrentPosition).getAlbumUri()).into(civ_album);
-            titleView.setText(data.get(mCurrentPosition).getTitle());
-            artistView.setText(data.get(mCurrentPosition).getArtist());
-        }
-
-        if(isPlaying)
-            ibStart.setImageResource(android.R.drawable.ic_media_pause);
-        else
-            ibStart.setImageResource(android.R.drawable.ic_media_play);
     }
 }

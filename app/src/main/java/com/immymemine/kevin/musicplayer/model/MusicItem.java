@@ -8,10 +8,11 @@ import android.provider.MediaStore;
  */
 
 public class MusicItem {
-    private String musicId, albumId, title, artist, duration, date_added;
+    private String musicId, albumId, title, artist;
+    private long duration, date_added;
     private Uri musicUri, albumUri;
 
-    public MusicItem(String musicId, String albumId, String title, String artist, String duration, String date_added) {
+    public MusicItem(String musicId, String albumId, String title, String artist, long duration, long date_added) {
         this.musicId = musicId; this.albumId = albumId; this.title =title; this.artist = artist;
         this.duration = duration; this.date_added = date_added;
     }
@@ -37,10 +38,10 @@ public class MusicItem {
     public String getArtist() {
         return artist;
     }
-    public String getDuration() {
+    public long getDuration() {
         return duration;
     }
-    public String getDate_added() {
+    public long getDate_added() {
         return date_added;
     }
     public Uri getMusicUri() {

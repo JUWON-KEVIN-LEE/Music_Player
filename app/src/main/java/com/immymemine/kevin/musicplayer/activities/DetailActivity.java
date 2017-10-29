@@ -1,262 +1,249 @@
 package com.immymemine.kevin.musicplayer.activities;
 
-import android.content.ComponentName;
-import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.os.Bundle;
-import android.os.IBinder;
 import android.support.v4.view.ViewPager;
 import android.support.v7.app.AppCompatActivity;
-import android.util.Log;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.SeekBar;
+import android.widget.TextView;
 
-import com.bumptech.glide.Glide;
 import com.immymemine.kevin.musicplayer.R;
 import com.immymemine.kevin.musicplayer.adapter.DetailViewPagerAdater;
+import com.immymemine.kevin.musicplayer.events.ActivityToServiceEvent;
+import com.immymemine.kevin.musicplayer.events.BusProvider;
+import com.immymemine.kevin.musicplayer.events.CurrentTimeEvent;
+import com.immymemine.kevin.musicplayer.events.Event;
+import com.immymemine.kevin.musicplayer.events.IsPlayingEvent;
+import com.immymemine.kevin.musicplayer.events.PlayerInfoEvent;
 import com.immymemine.kevin.musicplayer.model.MusicItem;
+import com.immymemine.kevin.musicplayer.service.PlayerInfo;
 import com.immymemine.kevin.musicplayer.service.PlayerService;
-import com.immymemine.kevin.musicplayer.utils.FileUtil;
+import com.immymemine.kevin.musicplayer.utils.Const;
+
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.immymemine.kevin.musicplayer.R.id.artistView;
-import static com.immymemine.kevin.musicplayer.R.id.civ_album;
-import static com.immymemine.kevin.musicplayer.R.id.titleView;
+import static com.immymemine.kevin.musicplayer.utils.FileUtil.ITEMS;
 
 public class DetailActivity extends AppCompatActivity {
-    // view
-    ViewPager viewPager;
-    SeekBar playerSeekBar;
-    ImageView ivList;
-    ImageButton ibPre, ibBack, ibStart, ibForward, ibNext;
-
-    // music player info
-    private boolean isBound;
-    private int mCurrentPosition;
-    private static List<MusicItem> data = new ArrayList<>();
-
-    // service
-    PlayerService playerService;
-    Intent intent;
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_detail);
-        // music data
-        data = FileUtil.ITEMS;
-
         // view
-        initView();
-        initViewPager();
+        ViewPager viewPager;
+        SeekBar playerSeekBar;
+        ImageView ivList;
+        ImageButton ibPre, ibBack, ibStart, ibForward, ibNext;
+        TextView timeView;
 
+        // music player info
+        private boolean isPlaying;
+        private int mCurrentPosition;
+        private PlayerInfo playerInfo;
 
         // service
-        intent = new Intent(this, PlayerService.class);
-        this.bindService(intent, con, Context.BIND_AUTO_CREATE);
+        Intent intent;
 
-        setSeekBar();
-    }
+        // event bus
+        EventBus bus;
+        ActivityToServiceEvent postEventToService;
 
-    private final ServiceConnection con = new ServiceConnection() {
+        // data...
+        List<MusicItem> musicData = new ArrayList<>();
+        boolean isFromOnCreate;
         @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            PlayerService.CustomBinder binder = (PlayerService.CustomBinder) service;
-            playerService = binder.getService();
-            isBound = true;
+        protected void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            setContentView(R.layout.activity_detail);
+
+            // data
+            musicData = ITEMS;
+
+            isFromOnCreate = true;
+            // view
+            initView();
+            initViewPager();
+
+            bus = BusProvider.getInstance();
+            bus.register(this);
+
+            // service
+            intent = new Intent(this, PlayerService.class);
+            startService(intent);
+            postEventToService = new ActivityToServiceEvent();
         }
 
         @Override
-        public void onServiceDisconnected(ComponentName name) {
-            isBound = false;
-        }
-    };
-
-    public void unBind() {
-        unbindService(con);
-    }
-
-
-    private void initView() {
-        playerSeekBar = (SeekBar) findViewById(R.id.playerSeekBar);
-        ivList = (ImageView) findViewById(R.id.iv_list);
-        ivList.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                finish();
-            }
-        });
-        ibPre = (ImageButton) findViewById(R.id.ib_pre);
-        ibBack = (ImageButton) findViewById(R.id.ib_back);
-        ibStart = (ImageButton) findViewById(R.id.ib_start);
-
-        ibForward = (ImageButton) findViewById(R.id.ib_forward);
-        ibNext = (ImageButton) findViewById(R.id.ib_next);
-    }
-
-    private void initViewPager() {
-        viewPager = (ViewPager) findViewById(R.id.viewPager);
-        DetailViewPagerAdater adapter = new DetailViewPagerAdater(this, data);
-        viewPager.setAdapter(adapter);
-
-        mCurrentPosition = 0;
-        viewPager.addOnPageChangeListener(new ViewPager.OnPageChangeListener() {
-            @Override
-            public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
-
-            }
-
-            @Override
-            public void onPageSelected(int position) {
-                mCurrentPosition = position;
-                playByList(mCurrentPosition);
-            }
-
-            @Override
-            public void onPageScrollStateChanged(int state) {
-
-            }
-        });
-
-        viewPager.setCurrentItem(mCurrentPosition);
-    }
-
-    public void play(View view) {
-        if(isBound) {
-            if(isPlaying)
-                pause(view);
-            else {
-                playerService.play();
-                isPlaying = playerService.getIsPlaying();
-            }
-
-            setUI();
-        }
-    }
-
-    public void pause(View view) {
-        if(isBound) {
-            playerService.pause();
-            isPlaying = playerService.getIsPlaying();
-
-            setUI();
-        }
-    }
-
-    int timePosition;
-    public void ff() {
-        timePosition = playerService.getPosition();
-        playerService.seekTo(timePosition+5000);
-        mCurrentPosition = playerService.getmCurrentPosition();
-    }
-
-    public void fb() {
-        timePosition = playerService.getPosition();
-        if(timePosition < 5000) {
-            if(isBound) {
-                playerService.pre();
-                mCurrentPosition = playerService.getmCurrentPosition();
-                isPlaying = playerService.getIsPlaying();
-
-                setUI();
-            }
-        } else {
-            playerService.seekTo(playerService.getPosition()-5000);
-        }
-    }
-
-    public void next(View view) {
-        if(isBound) {
-            playerService.next();
-            mCurrentPosition = playerService.getmCurrentPosition();
-            isPlaying = playerService.getIsPlaying();
-
-            setUI();
-        }
-    }
-
-    public void pre(View view) {
-        if(isBound) {
-            playerService.pre();
-            mCurrentPosition = playerService.getmCurrentPosition();
-            isPlaying = playerService.getIsPlaying();
-
-            setUI();
-        }
-    }
-
-    public void playByList(int position) { // 포지션 값에 의한 play
-        if(isBound) {
-            playerService.play(position);
-            isPlaying = playerService.getIsPlaying();
-            mCurrentPosition = playerService.getmCurrentPosition();
-
-            setUI();
-        }
-    }
-
-    private boolean isPlaying;
-
-    @Override
-    protected void onDestroy() {
-        unBind();
-        super.onDestroy();
-    }
-
-    public void setUI() {
-        if(!titleView.getText().toString().equals(data.get(mCurrentPosition).getTitle())) {
-            Glide.with(this).load(data.get(mCurrentPosition).getAlbumUri()).into(civ_album);
-            titleView.setText(data.get(mCurrentPosition).getTitle());
-            artistView.setText(data.get(mCurrentPosition).getArtist());
+        protected void onDestroy() {
+            // event bus 해제
+            bus.unregister(this);
+            super.onDestroy();
         }
 
-        if(isPlaying)
-            ibStart.setImageResource(android.R.drawable.ic_media_pause);
-        else
-            ibStart.setImageResource(android.R.drawable.ic_media_play);
-    }
-
-    public boolean runFlag;
-    private void setSeekBar() {
-        new Thread() {
-            public void run() {
-                while(runFlag) {
-                    playerSeekBar.setProgress(playerService.getPosition());
-
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
+        private void initView() {
+            playerSeekBar = (SeekBar) findViewById(R.id.playerSeekBar);
+            playerSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                    if(fromUser) {
+                        postEventToService.setCommand(Const.SEEK_TO);
+                        postEventToService.setmCurrentPosition(progress);
+                        bus.post(postEventToService);
+                        seekBar.setProgress(progress);
                     }
                 }
-            }
-        }.start();
 
-        playerSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if(fromUser) {
-                    playerService.seekTo(progress);
-                    seekBar.setProgress(progress);
+                @Override
+                public void onStartTrackingTouch(SeekBar seekBar) {
+
                 }
+
+                @Override
+                public void onStopTrackingTouch(SeekBar seekBar) {
+
+                }
+            });
+
+            ivList = (ImageView) findViewById(R.id.iv_list);
+            ivList.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    postEventToService.setCommand(Const.ACTIVITY_MOVE);
+                    bus.post(postEventToService);
+                    finish();
+                }
+            });
+            ibPre = (ImageButton) findViewById(R.id.ib_pre);
+            ibStart = (ImageButton) findViewById(R.id.ib_start);
+            ibNext = (ImageButton) findViewById(R.id.ib_next);
+
+            ibBack = (ImageButton) findViewById(R.id.ib_back);
+            ibForward = (ImageButton) findViewById(R.id.ib_forward);
+
+            timeView = (TextView) findViewById(R.id.timeView);
+        }
+        DetailViewPagerAdater adapter;
+        private void initViewPager() {
+            viewPager = (ViewPager) findViewById(R.id.viewPager);
+            adapter = new DetailViewPagerAdater(this, musicData);
+            viewPager.setAdapter(adapter);
+
+            viewPager.addOnPageChangeListener(new ViewPager.OnPageChangeListener() {
+                @Override
+                public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
+
+                }
+
+                @Override
+                public void onPageSelected(int position) {
+                    mCurrentPosition = position;
+                    if(!isFromOnCreate)
+                        play(mCurrentPosition);
+                    // 여기서 service 에 post 해줘야함
+                }
+
+                @Override
+                public void onPageScrollStateChanged(int state) {
+
+                }
+            });
+    //        viewPager.setCurrentItem(mCurrentPosition);
+        }
+
+        @Subscribe
+        public void subscriber(Event event) {
+            if(event instanceof IsPlayingEvent) {
+                if( ((IsPlayingEvent) event).isPlaying() )
+                    ibStart.setImageResource(android.R.drawable.ic_media_pause);
+                else
+                    ibStart.setImageResource(android.R.drawable.ic_media_play);
             }
 
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-
+            if(event instanceof PlayerInfoEvent) {
+                // player info setting
+                mCurrentPosition = ((PlayerInfoEvent) event).getPlayerInfo().getmCurrentPosition();
+                // 여기서 viewpager refresh 를 해주자
+                viewPager.setCurrentItem(mCurrentPosition);
+                isFromOnCreate = false;
+                playerSeekBar.setMax((int)musicData.get(mCurrentPosition).getDuration());
             }
 
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-
+            if( event instanceof CurrentTimeEvent ) {
+                playerSeekBar.setProgress( ((CurrentTimeEvent) event).getmCurrentTime() );
             }
-        });
-    }
 
+            // TODO 액티비티 간 이동시 받을 event subscriber 를 만들어주자
+        }
+
+        public void play(View view) {
+            if(isPlaying) {
+                pause();
+            } else {
+                postEventToService.setCommand(Const.PLAY);
+                bus.post(postEventToService);
+                isPlaying = true;
+                ibStart.setImageResource(android.R.drawable.ic_media_pause);
+            }
+        }
+
+        public void play(int position) { // 포지션 값에 의한 play
+            postEventToService.setCommand(Const.PLAYWITHPOSITION);
+            postEventToService.setmCurrentPosition(position);
+            bus.post(postEventToService);
+
+            isPlaying = true;
+            ibStart.setImageResource(android.R.drawable.ic_media_pause);
+            mCurrentPosition = position;
+            viewPager.setCurrentItem(mCurrentPosition);
+            playerSeekBar.setMax((int)musicData.get(mCurrentPosition).getDuration());
+        }
+
+        public void pause() {
+            postEventToService.setCommand(Const.PAUSE);
+            bus.post(postEventToService);
+            isPlaying = false;
+            ibStart.setImageResource(android.R.drawable.ic_media_play);
+        }
+
+        public void next(View view) {
+            postEventToService.setCommand(Const.NEXT);
+            bus.post(postEventToService);
+
+            isPlaying = true;
+            ibStart.setImageResource(android.R.drawable.ic_media_pause);
+            if(mCurrentPosition == musicData.size()-1) {
+                mCurrentPosition = 0;
+            } else {
+                mCurrentPosition++;
+            }
+            viewPager.setCurrentItem(mCurrentPosition);
+            playerSeekBar.setMax((int)musicData.get(mCurrentPosition).getDuration());
+        }
+
+        public void pre(View view) {
+            postEventToService.setCommand(Const.PRE);
+            bus.post(postEventToService);
+
+            isPlaying = true;
+            ibStart.setImageResource(android.R.drawable.ic_media_pause);
+            if(mCurrentPosition == 0) {
+                mCurrentPosition = musicData.size()-1;
+            } else {
+                mCurrentPosition--;
+            }
+            viewPager.setCurrentItem(mCurrentPosition);
+            playerSeekBar.setMax((int)musicData.get(mCurrentPosition).getDuration());
+        }
+
+        public void ff() {
+
+        }
+
+        public void fb() {
+
+        }
 
 }

@@ -33,7 +33,7 @@ public class FileUtil {
         while(cursor.moveToNext()) {
             MusicItem musicItem = new MusicItem(
                     getValue(cursor, proj[0]), getValue(cursor, proj[1]), getValue(cursor, proj[2]),
-                    getValue(cursor, proj[3]), getValue(cursor, proj[4]), getValue(cursor, proj[5])
+                    getValue(cursor, proj[3]), Long.parseLong(getValue(cursor, proj[4])), Long.parseLong(getValue(cursor, proj[5]))
             );
             musicItem.setMusicUri();
             musicItem.setAlbumUri();

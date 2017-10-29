@@ -10,34 +10,50 @@ import android.widget.TextView;
 import com.bumptech.glide.Glide;
 import com.immymemine.kevin.musicplayer.R;
 import com.immymemine.kevin.musicplayer.custom_view.CircleImageView;
+import com.immymemine.kevin.musicplayer.events.BusProvider;
+import com.immymemine.kevin.musicplayer.events.CurrentTimeEvent;
+import com.immymemine.kevin.musicplayer.events.Event;
 import com.immymemine.kevin.musicplayer.model.MusicItem;
 
+import org.greenrobot.eventbus.Subscribe;
+
+import java.text.SimpleDateFormat;
 import java.util.List;
+
+import static com.immymemine.kevin.musicplayer.utils.FileUtil.ITEMS;
 
 /**
  * Created by quf93 on 2017-10-16.
  */
 
 public class DetailViewPagerAdater extends PagerAdapter {
+
     Context context;
-    List<MusicItem> mValues;
-    public DetailViewPagerAdater(Context context, List<MusicItem> mValues) {
+    List<MusicItem> musicData;
+    SimpleDateFormat sdf = new SimpleDateFormat("mm:ss");
+    public DetailViewPagerAdater(Context context, List<MusicItem> musicData) {
         this.context = context;
-        this.mValues = mValues;
+        this.musicData = musicData;
+
+        BusProvider.getInstance().register(this);
     }
 
+    View view;
     @Override
     public Object instantiateItem(ViewGroup container, int position) {
-        View view = LayoutInflater.from(context).inflate(R.layout.detail, null);
+        view = LayoutInflater.from(context).inflate(R.layout.detail, null);
 
         TextView titleView = (TextView) view.findViewById(R.id.titleView);
-        titleView.setText(mValues.get(position).getTitle());
+        titleView.setText(musicData.get(position).getTitle());
 
         TextView artistView = (TextView) view.findViewById(R.id.artistView);
-        artistView.setText(mValues.get(position).getArtist());
+        artistView.setText(musicData.get(position).getArtist());
+
+        TextView durationView = (TextView) view.findViewById(R.id.durationView);
+        durationView.setText(sdf.format( musicData.get(position).getDuration() ));
 
         CircleImageView civView = (CircleImageView) view.findViewById(R.id.civView);
-        Glide.with(context).load(mValues.get(position).getAlbumUri()).into(civView);
+        Glide.with(context).load(musicData.get(position).getAlbumUri()).into(civView);
 
         container.addView(view);
 
@@ -51,11 +67,19 @@ public class DetailViewPagerAdater extends PagerAdapter {
 
     @Override
     public int getCount() {
-        return mValues.size();
+        return ITEMS.size();
     }
 
     @Override
     public boolean isViewFromObject(View view, Object object) {
         return view == object;
+    }
+
+    @Subscribe
+    public void subscriber(Event event) {
+        if( event instanceof CurrentTimeEvent ) {
+            TextView timeView = (TextView) view.findViewById(R.id.timeView);
+            timeView.setText(sdf.format(((CurrentTimeEvent) event).getmCurrentTime() + ""));
+        }
     }
 }
